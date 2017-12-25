@@ -17,6 +17,10 @@ class Crawler:
             rivensCurPage = self.parseRequest(data)
             rivens.extend(rivensCurPage)
             start = start + length
+            """if True:
+                print("Done with scan")
+                break;"""
+
             if len(rivensCurPage) < length:
                 print("Done with scan")
                 break;
@@ -63,4 +67,6 @@ class Crawler:
         #string = string.translate(translator)
         string = string.replace('\\','')
         string = string.replace('/', '')
+        if len(string) == 0:
+            string = "none"
         return string

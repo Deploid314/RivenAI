@@ -12,7 +12,7 @@ for riven in rivenList:
         print(stat)
         listing = listing + str(stat) + ","
 
-    for i in range(4,7):
+    for i in range(4,8):
         listing = listing + riven.stats[i] + ","
 
     listing = listing + riven.price

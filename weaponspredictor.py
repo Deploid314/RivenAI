@@ -16,19 +16,36 @@
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
+from sklearn.utils import shuffle
 
 import itertools
 
 import pandas as pd
 import tensorflow as tf
 import numpy as np
+import normalize
 
 tf.logging.set_verbosity(tf.logging.INFO)
 
-COLUMNS = ["weapon", "range", "damage"]
-FEATURES = ["weapon", "range"]
-LABEL = "damage"
+COLUMNS = []
+FEATURES = []
+LABEL = ""
 
+NN_layers = []
+
+def load_columns(file_name):
+    input_file = open(file_name)
+    input_line = input_file.readline()
+    input_line = input_line.replace('\n','')
+    input_array = input_line.split(',')
+    global COLUMNS
+    COLUMNS = input_array[2:len(input_array)]
+    global FEATURES
+    FEATURES = input_array[2:len(input_array)-1]
+    global LABEL
+    LABEL = input_array[len(input_array)-1]
+    global NN_layers
+    NN_layers = [len(FEATURES) + 5, 50, 50]
 
 def get_input_fn(data_set, num_epochs=None, shuffle=True):
   return tf.estimator.inputs.pandas_input_fn(
@@ -37,87 +54,103 @@ def get_input_fn(data_set, num_epochs=None, shuffle=True):
       num_epochs=num_epochs,
       shuffle=shuffle)
 
+def calculate(weapon_input, stat1_input, stat2_input, stat3_input, stat4_input, statname1_input, statname2_input, statname3_input, statname4_input, price_input):
+    stat1_input = normalize.stat_converter(float(stat1_input))
+    stat2_input = normalize.stat_converter(float(stat2_input))
+    stat3_input = normalize.stat_converter(float(stat3_input))
+    stat4_input = normalize.stat_converter(float(stat4_input))
+    statname1_input = statname1_input.replace(' ','_')
+    statname2_input = statname2_input.replace(' ', '_')
+    statname3_input = statname3_input.replace(' ', '_')
+    statname4_input = statname4_input.replace(' ', '_')
 
-
-def calculate(weapon_input, stat1_input, stat2_input, stat3_input, stat4_input, statname1_input, statname2_input, statname3_input, statname4_input):
-    stat1_input = int(stat1_input)
-    stat2_input = int(stat2_input)
-    stat3_input = int(stat3_input)
-    stat4_input = int(stat4_input)
+    calc_combined = [weapon_input, stat1_input, stat2_input, stat3_input, stat4_input, statname1_input, statname2_input, statname3_input, statname4_input]
 
     #weapon = tf.feature_column.categorical_column_with_vocabulary_list(
      #   'weapon', ['Pistol', 'Shotgun', 'SemiAutomatic Rifle', 'FullyAutomatic Rifle', 'Rocket Launcher']
     #)
 
     # Feature cols
-    feature_cols = [tf.feature_column.indicator_column("weapon"),tf.feature_column.numeric_column("stat1"),tf.feature_column.numeric_column("stat2"),tf.feature_column.numeric_column("stat3"),tf.feature_column.numeric_column("stat4"),tf.feature_column.indicator_column("statname1"),tf.feature_column.indicator_column("statname1"),tf.feature_column.indicator_column("statname2"),tf.feature_column.indicator_column("statname3"),tf.feature_column.indicator_column("statname4"),tf.feature_column.indicator_column("price")]
+    feature_cols = get_feature_cols()
 
     # Build 2 layer fully connected DNN with 10, 10 units respectively.
     regressor = tf.estimator.DNNRegressor(feature_columns=feature_cols,
-                                          hidden_units=[10, 10],
+                                          hidden_units = NN_layers,
                                           model_dir="/tmp/weaponstest")
 
-    prediction_set = pd.read_csv('/dev/rivai/writefile.txt', skipinitialspace=True,
+    prediction_set = pd.read_csv('writefile.txt', skipinitialspace=True,
                                  skiprows=1, names=COLUMNS)
+    x_dict = {}
+    x_dict["weapon"] = np.array([weapon_input])
+
+    for stats in FEATURES[1:]:
+        x_dict[stats] = np.array([float(normalize.stat_converter(0))])
+        for index in range(1,4):
+            if stats == calc_combined[index+4]:
+                x_dict[stats] = np.array([float(calc_combined[index])])
+
+    print(x_dict)
 
     predict_input_fn = tf.estimator.inputs.numpy_input_fn(
-        x={"weapon" : np.array([weapon_input]), "stat1_input" : np.array([stat1_input]), "stat2_input" : np.array([stat2_input]), "stat3_input" : np.array([stat3_input]), "stat4_input" : np.array([stat4_input]), "statname1_input" : np.array([statname1_input]), "statname2_input" : np.array([statname2_input]), "statname3_input" : np.array([statname3_input]), "statname4_input" : np.array([statname4_input])}
+        x=x_dict,
+
         y=np.array([0]),
                   num_epochs=None,
                   shuffle=True
     )
-
     y = regressor.predict(
         input_fn=predict_input_fn)
 
     predictions = list(p["predictions"] for p in itertools.islice(y, 1))
-    print("Predictions: {}".format(str(predictions)))
+
+    print("Exp:" + str(price_input) + " Predicted: " + str(predictions[0]) + " Error: " + str(predictions[0]/price_input))
 
     return predictions[0]
 
-def main(unused_argv):
 
-  if len(unused_argv) > 0:
-      calculate(unused_argv[0], unused_argv[1], unused_argv[2], unused_argv[3], unused_argv[4], unused_argv[5], unused_argv[6], unused_argv[7], unused_argv[8])
+def get_feature_cols():
+    weapon = tf.feature_column.categorical_column_with_hash_bucket(
+        key="weapon",
+        hash_bucket_size=1000)
+    feature_cols = [tf.feature_column.indicator_column(weapon)]
+
+    for feature in FEATURES[1:]:
+        feature_cols.append(tf.feature_column.numeric_column(feature))
+    return feature_cols
+
+
+def main(unused_argv):
+  load_columns("normalized.txt")
+  if len(unused_argv) > 1:
+      calculate("Soma",72.1,1.3,75,-20,"Damage  Melee Damage","Punch Through","Critical Chance","Ammo Maximum", 800)
+      calculate("Boar", 10.4, 10.6, 10.8, 0.0, "Status Duration", "Flight Speed", "Heat Damage", "none", 60)
+      calculate("Scoliac", 100.5, 140.6, 110.2, -44.3, "Electric Damage", "Range", "Critical_Chance_on_Slide_Attack", "Damage vs Corpus", 1000)
       return ""
   # Load datasets
-  training_set = pd.read_csv('/dev/rivai/writefile.txt', skipinitialspace=True,
+  full_set = pd.read_csv("normalized.txt", skipinitialspace=True,
                              skiprows=1, names=COLUMNS)
-  test_set = pd.read_csv('/dev/rivai/writefile.txt', skipinitialspace=True,
-                         skiprows=1, names=COLUMNS)
-
-  # Set of 6 examples for which to predict median house values
-  prediction_set = pd.read_csv('/dev/rivai/writefile.txt', skipinitialspace=True,
-                               skiprows=1, names=COLUMNS)
-
-  #weapon = tf.feature_column.categorical_column_with_vocabulary_list(
-   #   'weapon', ['Pistol', 'Shotgun', 'SemiAutomatic Rifle', 'FullyAutomatic Rifle', 'Rocket Launcher']
-  #)
 
   # Feature cols
-  feature_cols = [tf.feature_column.indicator_column("weapon"),tf.feature_column.numeric_column("stat1"),tf.feature_column.numeric_column("stat2"),tf.feature_column.numeric_column("stat3"),tf.feature_column.numeric_column("stat4"),tf.feature_column.indicator_column("statname1"),tf.feature_column.indicator_column("statname1"),tf.feature_column.indicator_column("statname2"),tf.feature_column.indicator_column("statname3"),tf.feature_column.indicator_column("statname4"),tf.feature_column.indicator_column("price")]
+  feature_cols = get_feature_cols()
 
   # Build 2 layer fully connected DNN with 10, 10 units respectively.
   regressor = tf.estimator.DNNRegressor(feature_columns=feature_cols,
-                                        hidden_units=[10, 10],
+                                        hidden_units = NN_layers,
                                         model_dir="/tmp/weaponstest")
 
   # Train
-  regressor.train(input_fn=get_input_fn(training_set), steps=5000)
+  full_set = shuffle(full_set)
+  training_size = int(len(full_set) * 0.9)
+  training_set = full_set.iloc[:training_size]
+  test_set = full_set.iloc[training_size:]
+  for i in range(10000):
+      regressor.train(input_fn=get_input_fn(training_set), steps=5000)
 
-  # Evaluate loss over one epoch of test_set.
-  ev = regressor.evaluate(
-      input_fn=get_input_fn(test_set, num_epochs=1, shuffle=False))
-  loss_score = ev["loss"]
-  print("Loss: {0:f}".format(loss_score))
-
-  # Print out predictions over a slice of prediction_set.
-  y = regressor.predict(
-      input_fn=get_input_fn(prediction_set, num_epochs=1, shuffle=False))
-  # .predict() returns an iterator of dicts; convert to a list and print
-  # predictions
-  predictions = list(p["predictions"] for p in itertools.islice(y, 6))
-  print("Predictions: {}".format(str(predictions)))
+      # Evaluate loss over one epoch of test_set.
+      ev = regressor.evaluate(
+          input_fn=get_input_fn(test_set, num_epochs=1, shuffle=False))
+      loss_score = ev["loss"]
+      print("Loss: {0:f}".format(loss_score))
 
 if __name__ == "__main__":
   tf.app.run()
