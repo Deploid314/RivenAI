@@ -45,7 +45,7 @@ def load_columns(file_name):
     global LABEL
     LABEL = input_array[len(input_array)-1]
     global NN_layers
-    NN_layers = [len(FEATURES) + 5, 50, 50]
+    NN_layers = [len(FEATURES)*8, 300, 200, 100]
 
 def get_input_fn(data_set, num_epochs=None, shuffle=True):
   return tf.estimator.inputs.pandas_input_fn(
